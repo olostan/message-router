@@ -74,7 +74,7 @@ function RouterStart() {
             toRegister.push(mRoute);
         }
 
-        var balancer = new Balancer('./router-worker', {
+        var balancer = new Balancer(__dirname+'/router-worker', {
             min_limit: minLimit,
             max_limit: maxLimit,
             concurrency: concurrency,

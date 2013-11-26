@@ -26,23 +26,23 @@ function getNext(route) {
                     if (reg.test(route))
                         next = workflowConfig[r];
                 }
-                if (!next)
-                    console.warn("Can't find next workflow step for ", route, "msg:",msg);
             }
-            if (next.indexOf('$')>0) {
+            //if (!next)
+            //    console.warn("Can't find next workflow step for ", route, "msg:",msg);
+            if (next && next.indexOf('$')>0) {
                 var s = "process.send({route:";
                 s+= ('"'+next.replace(/\$(\w+)/g,'"+msg.$1+"')+'"').replace('+""','');
                 s+=",data:msg})";
                 //console.log("generated function(msg) {",s,"}");
                 cache = Function('msg', s);
 
-            } else
+            } else if (next)
             cache = function(msg) {
                 process.send({route:next, data: msg});
-            };
+            }
             _nextCash[route] = cache;
         }
-        cache(msg,param);
+        if (cache)  cache(msg,param);
     }
     getter.generator = true;
     return getter;
@@ -57,6 +57,7 @@ for (var k in handler) {
 process.on('message', function(messageEnvelope) {
     if (messageEnvelope.cmd == '$workflow') {
         workflowConfig = messageEnvelope.workflow;
+        return;
     }
     var handlerFn = handler[messageEnvelope.route];
     if (!handlerFn) {

@@ -1,6 +1,6 @@
 {
   "name": "message-router",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Basic message routing using balancer",
   "main": "router.js",
   "scripts": {

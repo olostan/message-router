@@ -9,8 +9,19 @@ var workflow = {};
 
 var routingTable = {};
 
+var balancers = [];
+
+function sendAll(handlers, message) {
+    for(var i =0;i<handlers.length;i++) handlers[i].send(message);
+}
+
 function generateSender(gRoute, varName, varValue) {
     var handler = routingTable[gRoute];
+    if (handler.push)
+        return function (message) {
+            message.data[varName] = varValue;
+            sendAll(handler,message);
+        }
     return function (message) {
         message.data[varName] = varValue;
         handler.send(message);
@@ -39,13 +50,27 @@ function dispatchMessage(message) {
         }
         if (!handler) {
             console.error('No handler for message ', message, Object.keys(routingTable));
-            if (message.route[0]!='$')
+            if (message.route[0]!='$' && message.route !='error.noHandler')
                 dispatchMessage({route:'error.noHandler',data:message});
         }
     }
 
-    if (handler) handler.send(message);
+    if (handler) {
+        if (handler.push)
+            sendAll(handler,message);
+        else
+            handler.send(message);
+    }
 
+}
+function registerSender(route, sender){
+    if (routingTable[route]) {
+        if (routingTable[route].push)
+            routingTable[route].push(sender);
+        else
+            routingTable[route] = [routingTable[route],sender];
+    } else
+        routingTable[route] = sender;
 }
 
 function RouterStart() {
@@ -69,7 +94,7 @@ function RouterStart() {
                 }
             }
             if (routeDef && routeDef.nodes && routeDef.nodes > minLimit) minLimit = routeDef.nodes;
-            if (routeDef && routeDef.concurrency && routeDef.concurrency > minLimit) concurrency = routeDef.concurrency;
+            if (routeDef && routeDef.concurrency) concurrency = routeDef.concurrency;
             if (routeDef && routeDef.maxNodes && routeDef.maxNodes > maxLimit && routeDef.maxNodes >= minLimit) maxLimit = routeDef.maxNodes;
             toRegister.push(mRoute);
         }
@@ -86,21 +111,28 @@ function RouterStart() {
                 workflow: workflow
             });
         };
+        balancers.push(balancer);
         console.log("Configured ", path, ": min=", balancer.config.min_limit, " max=", balancer.config.max_limit, " conc=", balancer.config.concurrency);
 
         balancer.onMessage(dispatchMessage);
 
         toRegister.forEach(function (r) {
-            routingTable[r] = balancer
+            registerSender(r,balancer);
         })
     });
 }
+
 function addHanldersDir(dir) {
     var handers = fs.readdirSync(dir);
     handers.forEach(function (file) {
         handlerScripts.push(dir + '/' + file);
     });
 }
+
+function addHanlder(file) {
+    handlerScripts.push(file);
+}
+
 
 function ImportConfig(cfg) {
     for (var c in cfg) {
@@ -118,12 +150,38 @@ function RouterUse(m) {
     m(this);
 }
 
+
+function send(route, message) {
+    var envelope = {route: route, data: message};
+    if (process.send)
+        process.send(envelope);
+    else
+        dispatchMessage(envelope);
+}
+
+function stop() {
+    balancers.forEach(function(b){
+        b.disconnect();
+    })
+}
+
+function addListener(message,callBack) {
+    registerSender(message,{
+        send:callBack
+    });
+}
+
 module.exports = {
     config: ImportConfig,
     workflow: ImportWorkflow,
     start: RouterStart,
     addHandlersDir: addHanldersDir,
-    use: RouterUse
+    addHandler: addHanlder,
+    use: RouterUse,
+    send: send,
+    stop: stop,
+    on:addListener
+
 };
 
 

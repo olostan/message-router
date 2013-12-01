@@ -30,7 +30,7 @@ function generateSender(gRoute, varName, varValue) {
 
 function dispatchMessage(message) {
     var handler = routingTable[message.route];
-    if (!handler) {
+    if (!handler && message.route[0]!='$') {
         //console.log("Dynamic resolving for",message.route);
         // lets try dynamic handler
         for (var r in routingTable) {
@@ -48,10 +48,11 @@ function dispatchMessage(message) {
                 }
             }
         }
-        if (!handler) {
+    }
+    if (!handler) {
+        if (message.route[0]!='$' && message.route !='error.noHandler') {
             console.error('No handler for message ', message, Object.keys(routingTable));
-            if (message.route[0]!='$' && message.route !='error.noHandler')
-                dispatchMessage({route:'error.noHandler',data:message});
+            dispatchMessage({route:'error.noHandler',data:message});
         }
     }
 
@@ -110,6 +111,7 @@ function RouterStart() {
                 cmd: '$workflow',
                 workflow: workflow
             });
+            send('$worker.created',worker);
         };
         balancers.push(balancer);
         console.log("Configured ", path, ": min=", balancer.config.min_limit, " max=", balancer.config.max_limit, " conc=", balancer.config.concurrency);

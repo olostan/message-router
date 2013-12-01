@@ -53,6 +53,7 @@ function getNext(route) {
 for (var k in handler) {
     if (k[0] != '$' && handler.hasOwnProperty(k)) {
         _nextCash[k] = getNext(k);
+
     }
 }
 
@@ -61,6 +62,11 @@ process.on('message', function (messageEnvelope) {
         workflowConfig = messageEnvelope.workflow;
         return;
     }
+    if (messageEnvelope.cmd == '$data' ) {
+        if (handler.setData) handler.setData(messageEnvelope.data);
+        return;
+    }
+
     var handlerFn = handler[messageEnvelope.route];
     if (!handlerFn) {
         for (var r in handler) {

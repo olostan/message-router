@@ -55,7 +55,6 @@ function dispatchMessage(message) {
             dispatchMessage({route:'error.noHandler',data:message});
         }
     }
-
     if (handler) {
         if (handler.push)
             sendAll(handler,message);
@@ -95,7 +94,7 @@ function RouterStart() {
                 }
             }
             if (routeDef && routeDef.nodes && routeDef.nodes > minLimit) minLimit = routeDef.nodes;
-            if (routeDef && routeDef.concurrency) concurrency = routeDef.concurrency;
+            if (routeDef && routeDef.concurrency!==undefined) concurrency = routeDef.concurrency;
             if (routeDef && routeDef.maxNodes && routeDef.maxNodes > maxLimit && routeDef.maxNodes >= minLimit) maxLimit = routeDef.maxNodes;
             toRegister.push(mRoute);
         }

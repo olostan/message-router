@@ -86,3 +86,8 @@ process.on('message', function (messageEnvelope) {
     else
         console.warn('[Worker] Can\'t find handler for message:', messageEnvelope);
 });
+/*
+process.on('disconnect',function(){
+    console.log("[Worker] Stoped",script);
+})
+    */

@@ -11,8 +11,16 @@ var routingTable = {};
 
 var balancers = [];
 
+function sendToHandler(handler,message) {
+    if (handler.config && handler.config.concurrency && handler.config.concurrency>0)
+        handler.send({'$complete':message});
+    else
+        handler.send(message);
+}
+
 function sendAll(handlers, message) {
-    for(var i =0;i<handlers.length;i++) handlers[i].send(message);
+    for(var i =0;i<handlers.length;i++)
+        sendToHandler(handlers[i],message);
 }
 
 function generateSender(gRoute, varName, varValue) {
@@ -24,7 +32,7 @@ function generateSender(gRoute, varName, varValue) {
         }
     return function (message) {
         message.data[varName] = varValue;
-        handler.send(message);
+        sendToHandler(handler,message);
     }
 }
 
@@ -59,7 +67,7 @@ function dispatchMessage(message) {
         if (handler.push)
             sendAll(handler,message);
         else
-            handler.send(message);
+            sendToHandler(handler,message);
     }
 
 }
@@ -78,33 +86,21 @@ function RouterStart() {
     handlerScripts.forEach(function (handlerFile) {
         var path = handlerFile;
         var mRoutes = require(path);
-        var minLimit = 1;
-        var maxLimit = 1;
-        var concurrency = 1000;
-        var toRegister = [];
-        for (var mRoute in mRoutes) {
-            if (!mRoutes.hasOwnProperty(mRoute) || mRoute[0] == '$') continue;
-            var routeDef = config[mRoute];
-            if (!routeDef) {
-                // lets try to find extracting '*'
-                for (var r in config) {
-                    if (!config.hasOwnProperty(r)) continue;
-                    var reg = new RegExp(r.replace('.', '\\.').replace('*', '\\w+'));
-                    if (reg.test(mRoute)) routeDef = config[r];
-                }
+
+        var balancerConfig = {
+            min_limit: 1,
+            max_limit: 1,
+            concurrency: 0,
+            args: [path]
+        };
+        if (mRoutes['$config']) {
+            var config = mRoutes['$config'];
+            for (var k in config) {
+                if (config.hasOwnProperty(k)) balancerConfig[k] = config[k];
             }
-            if (routeDef && routeDef.nodes && routeDef.nodes > minLimit) minLimit = routeDef.nodes;
-            if (routeDef && routeDef.concurrency!==undefined) concurrency = routeDef.concurrency;
-            if (routeDef && routeDef.maxNodes && routeDef.maxNodes > maxLimit && routeDef.maxNodes >= minLimit) maxLimit = routeDef.maxNodes;
-            toRegister.push(mRoute);
         }
 
-        var balancer = new Balancer(__dirname+'/router-worker', {
-            min_limit: minLimit,
-            max_limit: maxLimit,
-            concurrency: concurrency,
-            args: [path]
-        });
+        var balancer = new Balancer(__dirname+'/router-worker', balancerConfig);
         balancer.newWorkerHandler = function (worker) {
             worker.worker.send({
                 cmd: '$workflow',
@@ -117,9 +113,10 @@ function RouterStart() {
 
         balancer.onMessage(dispatchMessage);
 
-        toRegister.forEach(function (r) {
-            registerSender(r,balancer);
-        })
+        for (var mRoute in mRoutes) {
+            if (!mRoutes.hasOwnProperty(mRoute) || mRoute[0] == '$') continue;
+            registerSender(mRoute,balancer);
+        }
     });
 }
 
@@ -154,6 +151,17 @@ function RouterUse(m) {
 
 function send(route, message) {
     var envelope = {route: route, data: message};
+    if (process.send) {
+        if (!process.connected)
+            console.warn("Reply from disconnected worker discarded:",message);
+        else
+            process.send(envelope);
+    }
+    else
+        dispatchMessage(envelope);
+}
+function complete(route, message) {
+    var envelope = {'$complete':{route: route, data: message}}
     if (process.send)
         process.send(envelope);
     else
@@ -180,6 +188,7 @@ module.exports = {
     addHandler: addHanlder,
     use: RouterUse,
     send: send,
+    complete: complete,
     stop: stop,
     on:addListener
 

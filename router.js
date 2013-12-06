@@ -1,6 +1,8 @@
 var fs = require('fs');
 var Balancer = require('child-balancer');
 
+const debugRouting = false;
+
 var handlerScripts = [];
 
 var config = {};
@@ -12,6 +14,10 @@ var routingTable = {};
 var balancers = [];
 
 function sendToHandler(handler,message) {
+    if (debugRouting) console.log("[RT] --> ",message.route);
+
+    //if (message.route=='hotel.countryId') console.log(handler);
+
     if (handler.config && handler.config.concurrency && handler.config.concurrency>0)
         handler.send({'$complete':message});
     else
@@ -58,8 +64,8 @@ function dispatchMessage(message) {
         }
     }
     if (!handler) {
-        if (message.route[0]!='$' && message.route !='error.noHandler') {
-            console.error('No handler for message ', message, Object.keys(routingTable));
+        if (message.route[0]!='$' && message.route !=='error.noHandler') {
+            console.error('No handler for route', message.route);
             dispatchMessage({route:'error.noHandler',data:message});
         }
     }
@@ -91,6 +97,7 @@ function RouterStart() {
             min_limit: 1,
             max_limit: 1,
             concurrency: 0,
+            pulseTime: 5000,
             args: [path]
         };
         if (mRoutes['$config']) {
@@ -152,6 +159,7 @@ function RouterUse(m) {
 function send(route, message) {
     var envelope = {route: route, data: message};
     if (process.send) {
+        if (debugRouting) console.log("[RT] <-- ",route);
         if (!process.connected)
             console.warn("Reply from disconnected worker discarded:",message);
         else

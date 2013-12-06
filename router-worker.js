@@ -133,6 +133,7 @@ function messageDiscarded(msg) {
     console.warn("Message from disconnected worker discarded:",msg);
 }
 process.on('disconnect',function(){
+    console.log('[Worker] Finished ',script,'['+process.pid+']');
     for(var k in _nextCash)
         if (_nextCash.hasOwnProperty(k)) _nextCash[k] = messageDiscarded;
 });

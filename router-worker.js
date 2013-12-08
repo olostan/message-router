@@ -132,8 +132,19 @@ process.on('message', function (messageEnvelope) {
 function messageDiscarded(msg) {
     console.warn("Message from disconnected worker discarded:",msg);
 }
+var heapdump;
+try {
+ heapdump = require('heapdump');
+} catch(e) {}
+
 process.on('disconnect',function(){
     console.log('[Worker] Finished ',script,'['+process.pid+']');
     for(var k in _nextCash)
         if (_nextCash.hasOwnProperty(k)) _nextCash[k] = messageDiscarded;
+    if (heapdump) {
+        var p = script.split('/');
+        var file = p[p.length-1];
+        console.log("Writing dumps");
+        heapdump.writeSnapshot('logs/dump-'+Date.now()+'-'+file+'-'+process.pid+'.heapsnapshot');
+    }
 });

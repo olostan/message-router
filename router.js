@@ -29,11 +29,11 @@ function getTiming(route) {
     return t;
 }
 
-function generateTimedWrapper(balancer) {
-    var oldSend = balancer.send;
-    balancer.send = function timingSendWrapper(msg) {
+function generateTimedWrapper(sender) {
+    var oldSend = sender.send;
+    sender.send = function timingSendWrapper(msg) {
         msg.$timing = new Date();
-        oldSend.call(balancer,msg);
+        oldSend.call(sender,msg);
     }
 }
 
@@ -169,10 +169,11 @@ function RouterStart() {
                 cmd: '$workflow',
                 workflow: workflow
             });
+            if (debugTiming) generateTimedWrapper(worker);
             send('$worker.created',worker);
         };
 
-        if (debugTiming) generateTimedWrapper(balancer);
+
 
         balancers.push(balancer);
         console.log("Configured ", handlerFile, ": min=", balancer.config.min_limit, " max=", balancer.config.max_limit, " c=", balancer.config.concurrency);

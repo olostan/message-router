@@ -144,7 +144,7 @@ process.on('disconnect',function(){
     if (heapdump) {
         var p = script.split('/');
         var file = p[p.length-1];
-        console.log("Writing dumps");
-        heapdump.writeSnapshot('logs/dump-'+Date.now()+'-'+file+'-'+process.pid+'.heapsnapshot');
+//        console.log("Writing dumps");
+//        heapdump.writeSnapshot('logs/dump-'+Date.now()+'-'+file+'-'+process.pid+'.heapsnapshot');
     }
 });

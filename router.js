@@ -76,7 +76,7 @@ function dispatchMessage(message) {
 
     if (message.cmd == '$timing') {
         t = getTiming(message.route);
-        t.serialization += message.timing;
+        t.serialization += message.timing|0;
         t.count ++;
         return;
     }

@@ -34,7 +34,7 @@ function generateTimedWrapper(sender) {
     sender.send = function timingSendWrapper(msg) {
         msg.$timing = new Date();
         oldSend.call(sender,msg);
-    }
+    };
 }
 
 function sendToHandler(handler,message) {
@@ -74,7 +74,7 @@ function dispatchMessage(message) {
         t.count ++;
     }
 
-    if (message.cmd == '$timing') {
+    if (message.cmd === '$timing') {
         t = getTiming(message.route);
         t.serialization += message.timing|0;
         t.count ++;
@@ -198,8 +198,6 @@ function addHandlersDir(dir) {
 function addHandler(file) {
     handlerScripts.push(file);
 }
-
-
 function ImportConfig(cfg) {
     for (var c in cfg)
         if (cfg.hasOwnProperty(c)) config[c] = cfg[c];
@@ -237,8 +235,7 @@ function addListener(message,callBack) {
         send:callBackWrapper
     });
 }
-
-module.exports = {
+var router = {
     config: ImportConfig,
     workflow: ImportWorkflow,
     start: RouterStart,
@@ -249,9 +246,15 @@ module.exports = {
     complete: complete,
     stop: stop,
     on:addListener,
-    timing:timing
-
+    timing:timing,
+    replace:replace
 };
 
+function replace(newRouter) {
+    for (var m in newRouter)
+    if (newRouter.hasOwnProperty(m)) router[m] = newRouter[m];
+}
+
+module.exports = router;
 
 

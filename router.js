@@ -1,7 +1,10 @@
+"use strict";
+
 var fs = require('fs');
 var Balancer = require('child-balancer');
 
 const debugRouting = false;
+const debugTiming = true;
 
 var handlerScripts = [];
 
@@ -13,10 +16,29 @@ var routingTable = {};
 
 var balancers = [];
 
+var timing = {};
+function getTiming(route) {
+    var t = timing[route];
+    if (!t) {
+        t = {
+            serialization:0,
+            count:0
+        };
+        timing[route]=t;
+    }
+    return t;
+}
+
+function generateTimedWrapper(balancer) {
+    var oldSend = balancer.send;
+    balancer.send = function timingSendWrapper(msg) {
+        msg.$timing = new Date();
+        oldSend.call(balancer,msg);
+    }
+}
+
 function sendToHandler(handler,message) {
     if (debugRouting) console.log("[RT] --> ",message.route);
-
-    //if (message.route=='hotel.countryId') console.log(handler);
 
     if (handler.config && handler.config.concurrency && handler.config.concurrency>0)
         handler.send({'$complete':message});
@@ -29,22 +51,38 @@ function sendAll(handlers, message) {
         sendToHandler(handlers[i],message);
 }
 
+
 function generateSender(gRoute, varName, varValue) {
     var handler = routingTable[gRoute];
     if (handler.push)
         return function (message) {
             message.data[varName] = varValue;
             sendAll(handler,message);
-        }
+        };
     return function (message) {
         message.data[varName] = varValue;
         sendToHandler(handler,message);
-    }
+    };
 }
 
 function dispatchMessage(message) {
+    var t;
+    if (debugTiming && message.$timing) {
+        var end = new Date();
+        t = getTiming(message.route);
+        t.serialization +=  end-new Date(message.$timing);
+        t.count ++;
+    }
+
+    if (message.cmd == '$timing') {
+        t = getTiming(message.route);
+        t.serialization += message.timing;
+        t.count ++;
+        return;
+    }
+
     var handler = routingTable[message.route];
-    if (!handler && message.route[0]!='$') {
+    if (!handler && message.route[0]!=='$') {
         //console.log("Dynamic resolving for",message.route);
         // lets try dynamic handler
         for (var r in routingTable) {
@@ -64,7 +102,7 @@ function dispatchMessage(message) {
         }
     }
     if (!handler) {
-        if (message.route[0]!='$' && message.route !=='error.noHandler') {
+        if (message.route[0]!=='$' && message.route !=='error.noHandler') {
             console.error('No handler for route', message.route);
             dispatchMessage({route:'error.noHandler',data:message});
         }
@@ -77,6 +115,25 @@ function dispatchMessage(message) {
     }
 
 }
+
+function send(route, message) {
+    var envelope = {route: route, data: message};
+    if (process.send) {
+        if (debugTiming)
+            envelope.$timing = new Date();
+
+        if (debugRouting) console.log("[RT] <-- ",route);
+        if (!process.connected)
+            console.warn("Reply from disconnected worker discarded:",message);
+        else
+            process.send(envelope);
+    }
+    else
+        dispatchMessage(envelope);
+}
+
+
+
 function registerSender(route, sender){
     if (routingTable[route]) {
         if (routingTable[route].push)
@@ -90,18 +147,17 @@ function registerSender(route, sender){
 function RouterStart() {
     //var handlers = {};
     handlerScripts.forEach(function (handlerFile) {
-        var path = handlerFile;
-        var mRoutes = require(path);
+        var mRoutes = require(handlerFile);
 
         var balancerConfig = {
             min_limit: 1,
             max_limit: 1,
             concurrency: 0,
             pulseTime: 5000,
-            args: [path]
+            args: [handlerFile]
         };
-        if (mRoutes['$config']) {
-            var config = mRoutes['$config'];
+        if (mRoutes.$config) {
+            var config = mRoutes.$config;
             for (var k in config) {
                 if (config.hasOwnProperty(k)) balancerConfig[k] = config[k];
             }
@@ -115,61 +171,51 @@ function RouterStart() {
             });
             send('$worker.created',worker);
         };
+
+        if (debugTiming) generateTimedWrapper(balancer);
+
         balancers.push(balancer);
-        console.log("Configured ", path, ": min=", balancer.config.min_limit, " max=", balancer.config.max_limit, " conc=", balancer.config.concurrency);
+        console.log("Configured ", handlerFile, ": min=", balancer.config.min_limit, " max=", balancer.config.max_limit, " c=", balancer.config.concurrency);
 
         balancer.onMessage(dispatchMessage);
 
-        for (var mRoute in mRoutes) {
-            if (!mRoutes.hasOwnProperty(mRoute) || mRoute[0] == '$') continue;
-            registerSender(mRoute,balancer);
-        }
+        for (var mRoute in mRoutes)
+            if (mRoutes.hasOwnProperty(mRoute) && mRoute[0] !== '$') {
+                registerSender(mRoute, balancer);
+            }
+
     });
 }
 
-function addHanldersDir(dir) {
-    var handers = fs.readdirSync(dir);
-    handers.forEach(function (file) {
+function addHandlersDir(dir) {
+    var handlers = fs.readdirSync(dir);
+    handlers.forEach(function (file) {
         handlerScripts.push(dir + '/' + file);
     });
 }
 
-function addHanlder(file) {
+function addHandler(file) {
     handlerScripts.push(file);
 }
 
 
 function ImportConfig(cfg) {
-    for (var c in cfg) {
-        if (!cfg.hasOwnProperty(c)) continue;
-        config[c] = cfg[c];
-    }
+    for (var c in cfg)
+        if (cfg.hasOwnProperty(c)) config[c] = cfg[c];
+
 }
 function ImportWorkflow(cfg) {
-    for (var c in cfg) {
-        if (!cfg.hasOwnProperty(c)) continue;
-        workflow[c] = cfg[c];
-    }
+    for (var c in cfg)
+        if (cfg.hasOwnProperty(c)) workflow[c] = cfg[c];
+
 }
 function RouterUse(m) {
     m(this);
 }
 
 
-function send(route, message) {
-    var envelope = {route: route, data: message};
-    if (process.send) {
-        if (debugRouting) console.log("[RT] <-- ",route);
-        if (!process.connected)
-            console.warn("Reply from disconnected worker discarded:",message);
-        else
-            process.send(envelope);
-    }
-    else
-        dispatchMessage(envelope);
-}
 function complete(route, message) {
-    var envelope = {'$complete':{route: route, data: message}}
+    var envelope = {'$complete':{route: route, data: message}};
     if (process.send)
         process.send(envelope);
     else
@@ -179,12 +225,15 @@ function complete(route, message) {
 function stop() {
     balancers.forEach(function(b){
         b.disconnect();
-    })
+    });
 }
 
 function addListener(message,callBack) {
+    var callBackWrapper = function(msg) {
+        callBack(msg.data);
+    };
     registerSender(message,{
-        send:callBack
+        send:callBackWrapper
     });
 }
 
@@ -192,13 +241,14 @@ module.exports = {
     config: ImportConfig,
     workflow: ImportWorkflow,
     start: RouterStart,
-    addHandlersDir: addHanldersDir,
-    addHandler: addHanlder,
+    addHandlersDir: addHandlersDir,
+    addHandler: addHandler,
     use: RouterUse,
     send: send,
     complete: complete,
     stop: stop,
-    on:addListener
+    on:addListener,
+    timing:timing
 
 };
 

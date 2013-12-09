@@ -1,3 +1,5 @@
+"use strict";
+
 var script = process.argv[2];
 /**
  * @dict
@@ -15,15 +17,9 @@ console.log("[Worker] Starting", script, "["+process.pid+"]");
  */
 var workflowConfig;
 
-var router = {
-    send: function (route, message) {
-        process.send({route: route, data: message});
-    }
-};
-
 var noOperation = function () {};
 
-(handler['$start'] || noOperation)(router);
+(handler.$start || noOperation)();
 
 
 var _nextCash = {};
@@ -43,8 +39,8 @@ function getNext(route) {
             if (!next)
             {
 
-                for (var r in workflowConfig) {
-                    if (!workflowConfig.hasOwnProperty(r)) continue;
+                for (var r in workflowConfig)
+                    if (workflowConfig.hasOwnProperty(r)) {
                     var reg = new RegExp(r.replace('.', '\\.').replace('*', '\\w+'));
                     if (reg.test(route))
                         next = workflowConfig[r];
@@ -66,14 +62,14 @@ function getNext(route) {
                     message += ",data:msg}";
                     if (completing)
                         message = '{"$complete":'+message+"}";
-
+                    /*jshint evil:true */
                     cache = Function('msg', 'process.send('+message+')');
 
                 } else
                 cache =  completing?
                     function (msg) { process.send({'$complete':{route: next, data: msg}}); }
                     :
-                    function (msg) { process.send({route: next, data: msg}); }
+                    function (msg) { process.send({route: next, data: msg}); };
 
             }
             else cache = noOperation;
@@ -87,18 +83,21 @@ function getNext(route) {
 
 (function () {
     for (var k in handler) {
-        if (k[0] != '$' && handler.hasOwnProperty(k)) {
+        if (k[0] !== '$' && handler.hasOwnProperty(k)) {
             _nextCash[k] = getNext(k);
         }
     }
 })();
 
 process.on('message', function (messageEnvelope) {
-    if (messageEnvelope.cmd == '$workflow') {
+    if (messageEnvelope.$timing)
+        process.send({cmd:'$timing',route:messageEnvelope.route,timing:new Date()-new Date(messageEnvelope.$timing)});
+
+    if (messageEnvelope.cmd === '$workflow') {
         workflowConfig = messageEnvelope.workflow;
         return;
     }
-    if (messageEnvelope.cmd == '$data') {
+    if (messageEnvelope.cmd === '$data') {
         if (handler.setData) { //noinspection JSCheckFunctionSignatures
             handler.setData(messageEnvelope.data);
         }
@@ -120,7 +119,7 @@ process.on('message', function (messageEnvelope) {
             }
         }
     }
-    if (typeof(handlerFn) == 'object') {
+    if (typeof(handlerFn) === 'object') {
         console.error("Handler for route", messageEnvelope.route, " shouldn't be an object:", handlerFn);
     }
     if (handlerFn)
@@ -141,10 +140,10 @@ process.on('disconnect',function(){
     console.log('[Worker] Finished ',script,'['+process.pid+']');
     for(var k in _nextCash)
         if (_nextCash.hasOwnProperty(k)) _nextCash[k] = messageDiscarded;
-    if (heapdump) {
-        var p = script.split('/');
-        var file = p[p.length-1];
+//    if (heapdump) {
+//        var p = script.split('/');
+//        var file = p[p.length-1];
 //        console.log("Writing dumps");
 //        heapdump.writeSnapshot('logs/dump-'+Date.now()+'-'+file+'-'+process.pid+'.heapsnapshot');
-    }
+//    }
 });
